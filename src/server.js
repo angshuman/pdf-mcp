@@ -17,6 +17,8 @@ import {
   mergePDFs,
   extractPages,
   splitPDF,
+  pageToImage,
+  pdfToImages,
 } from './pdf-utils.js';
 
 const server = new McpServer({
@@ -152,6 +154,57 @@ server.tool(
       content: [{
         type: 'text',
         text: `Split ${result.numPages} pages → ${result.outputDir}\nFiles:\n${result.files.join('\n')}`,
+      }],
+    };
+  }
+);
+
+// ---------------------------------------------------------------------------
+// pdf_page_to_image — render one page as PNG/JPEG
+// ---------------------------------------------------------------------------
+server.tool(
+  'pdf_page_to_image',
+  'Render a single PDF page to a PNG or JPEG image file.',
+  {
+    input_path: z.string().describe('Source PDF file path'),
+    page: z.number().int().positive().describe('Page number to render (1-based)'),
+    output_path: z.string().describe('Output image path (.png or .jpg)'),
+    scale: z.number().positive().optional()
+      .describe('Render scale multiplier — 1.0 = 72 DPI, 2.0 = 144 DPI (default), 3.0 = 216 DPI'),
+    format: z.enum(['png', 'jpeg']).optional()
+      .describe('Image format — inferred from output_path extension if omitted'),
+  },
+  async ({ input_path, page, output_path, scale, format }) => {
+    const result = await pageToImage(input_path, page, output_path, { scale, format });
+    return {
+      content: [{
+        type: 'text',
+        text: `Rendered page ${result.page} → ${result.outputPath}\nSize: ${result.width}×${result.height}px  Scale: ${result.scale}×  Format: ${result.format}`,
+      }],
+    };
+  }
+);
+
+// ---------------------------------------------------------------------------
+// pdf_to_images — render all pages as images
+// ---------------------------------------------------------------------------
+server.tool(
+  'pdf_to_images',
+  'Render every page of a PDF to image files (PNG or JPEG) in a directory.',
+  {
+    input_path: z.string().describe('Source PDF file path'),
+    output_dir: z.string().describe('Directory to save images into (created if missing)'),
+    scale: z.number().positive().optional()
+      .describe('Render scale — 1.0 = 72 DPI, 2.0 = 144 DPI (default), 3.0 = 216 DPI'),
+    format: z.enum(['png', 'jpeg']).optional()
+      .describe('Image format (default: png)'),
+  },
+  async ({ input_path, output_dir, scale, format }) => {
+    const result = await pdfToImages(input_path, output_dir, { scale, format });
+    return {
+      content: [{
+        type: 'text',
+        text: `Rendered ${result.numPages} page(s) → ${result.outputDir}\nFormat: ${result.format}  Scale: ${result.scale}×\nFiles:\n${result.files.join('\n')}`,
       }],
     };
   }

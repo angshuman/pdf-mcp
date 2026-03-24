@@ -64,6 +64,8 @@ claude mcp add pdf-mcp -- node /path/to/pdf-mcp/src/server.js
 | `pdf_merge` | Merge an ordered list of PDFs into one file. |
 | `pdf_extract_pages` | Pull specific pages (1-based array) into a new PDF. |
 | `pdf_split` | Split a PDF into one file per page in an output directory. |
+| `pdf_page_to_image` | Render a single page to a PNG or JPEG image. |
+| `pdf_to_images` | Render every page to image files in a directory. |
 
 ---
 
@@ -99,7 +101,17 @@ pdf-tool extract input.pdf output.pdf 1,3,5
 
 # Split into individual page files
 pdf-tool split input.pdf ./pages/
+
+# Render a single page to an image (PNG or JPEG)
+pdf-tool image input.pdf page1.png --page 1
+pdf-tool image input.pdf page1.jpg --page 1 --scale 3
+
+# Render all pages to images in a directory
+pdf-tool images input.pdf ./images/
+pdf-tool images input.pdf ./images/ --format jpeg --scale 1.5
 ```
+
+Scale controls DPI: `1.0` = 72 DPI · `2.0` = 144 DPI (default) · `3.0` = 216 DPI
 
 ---
 
@@ -125,12 +137,12 @@ Uses the Node.js built-in test runner — no extra dependencies.
 npm test
 ```
 
-22 tests covering all six core operations: write, read, info, merge, extract pages, and split.
+40 tests across 8 suites covering all operations: write, read, info, merge, extract pages, split, page-to-image, and pdf-to-images.
 
 ---
 
 ## Notes
 
-- pdfjs-dist emits a stderr warning about `LiberationSans.ttf` when reading PDFs whose fonts are not embedded (including PDFs created by pdf-lib with standard Type1 fonts). This is cosmetic — text extraction is unaffected.
+- pdfjs-dist emits stderr warnings about `LiberationSans.ttf` and glyph paths when rendering PDFs that use non-embedded standard Type1 fonts (Helvetica, Times, etc.). These are cosmetic — text extraction is unaffected, and image rendering works correctly for PDFs with embedded fonts (the common case for PDFs from Word, Adobe, Google Docs, etc.).
 - All file paths passed to the MCP tools and CLI can be absolute or relative to the current working directory.
 - Page numbers are always 1-based in both the MCP tools and CLI.

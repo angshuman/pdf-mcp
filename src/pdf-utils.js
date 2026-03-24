@@ -7,6 +7,7 @@ import { createRequire } from 'module';
 import { pathToFileURL } from 'url';
 import { getDocument, GlobalWorkerOptions, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { createCanvas } from 'canvas';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -18,6 +19,7 @@ GlobalWorkerOptions.verbosity = VerbosityLevel.ERRORS; // suppress non-error war
 
 const pdfDistRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
 const STANDARD_FONT_DATA_URL = pathToFileURL(path.join(pdfDistRoot, 'standard_fonts')).href + '/';
+const CMAP_URL = pathToFileURL(path.join(pdfDistRoot, 'cmaps')).href + '/';
 
 // ---------------------------------------------------------------------------
 // Reading
@@ -252,4 +254,129 @@ export async function splitPDF(inputPath, outputDir) {
   }
 
   return { outputDir: absDir, numPages: total, files: outputPaths };
+}
+
+// ---------------------------------------------------------------------------
+// Image rendering
+// ---------------------------------------------------------------------------
+
+// pdfjs-dist NodeCanvasFactory — required for rendering pages to canvas in Node.js
+class NodeCanvasFactory {
+  create(width, height) {
+    const canvas = createCanvas(width, height);
+    return { canvas, context: canvas.getContext('2d') };
+  }
+  reset({ canvas }, width, height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  destroy(canvasAndContext) {
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+  }
+}
+
+/**
+ * Render a single PDF page to an image file (PNG or JPEG).
+ *
+ * @param {string} inputPath  - Source PDF
+ * @param {number} pageNumber - 1-based page number
+ * @param {string} outputPath - Output image path (.png or .jpg/.jpeg)
+ * @param {object} options    - { scale: number (default 2.0), format: 'png'|'jpeg' }
+ */
+export async function pageToImage(inputPath, pageNumber, outputPath, options = {}) {
+  const { scale = 2.0, format } = options;
+  const absInput = path.resolve(inputPath);
+  const absOutput = path.resolve(outputPath);
+
+  // Infer format from extension if not provided
+  const ext = path.extname(absOutput).toLowerCase();
+  const imgFormat = format ?? (ext === '.jpg' || ext === '.jpeg' ? 'jpeg' : 'png');
+  const mimeType = imgFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
+
+  const data = await fs.readFile(absInput);
+  const pdf = await getDocument({
+    data: new Uint8Array(data),
+    standardFontDataUrl: STANDARD_FONT_DATA_URL,
+    cMapUrl: CMAP_URL,
+    cMapPacked: true,
+    useSystemFonts: true,
+  }).promise;
+
+  const total = pdf.numPages;
+  if (pageNumber < 1 || pageNumber > total) {
+    throw new Error(`Page ${pageNumber} is out of range — PDF has ${total} page(s)`);
+  }
+
+  const page = await pdf.getPage(pageNumber);
+  const viewport = page.getViewport({ scale });
+
+  const canvasFactory = new NodeCanvasFactory();
+  const { canvas, context } = canvasFactory.create(
+    Math.ceil(viewport.width),
+    Math.ceil(viewport.height),
+  );
+
+  await page.render({ canvasContext: context, viewport, canvasFactory }).promise;
+  await pdf.destroy();
+
+  const buffer = canvas.toBuffer(mimeType);
+  await fs.writeFile(absOutput, buffer);
+
+  return {
+    outputPath: absOutput,
+    format: imgFormat,
+    width: canvas.width,
+    height: canvas.height,
+    scale,
+    page: pageNumber,
+  };
+}
+
+/**
+ * Render every page of a PDF to image files in a directory.
+ *
+ * @param {string} inputPath - Source PDF
+ * @param {string} outputDir - Directory to write images into (created if missing)
+ * @param {object} options   - { scale: number, format: 'png'|'jpeg' }
+ */
+export async function pdfToImages(inputPath, outputDir, options = {}) {
+  const { scale = 2.0, format = 'png' } = options;
+  const absInput = path.resolve(inputPath);
+  const absDir = path.resolve(outputDir);
+  await fs.mkdir(absDir, { recursive: true });
+
+  const data = await fs.readFile(absInput);
+  const pdf = await getDocument({
+    data: new Uint8Array(data),
+    standardFontDataUrl: STANDARD_FONT_DATA_URL,
+    cMapUrl: CMAP_URL,
+    cMapPacked: true,
+    useSystemFonts: true,
+  }).promise;
+
+  const total = pdf.numPages;
+  const ext = format === 'jpeg' ? 'jpg' : 'png';
+  const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const canvasFactory = new NodeCanvasFactory();
+  const files = [];
+
+  for (let i = 1; i <= total; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale });
+    const { canvas, context } = canvasFactory.create(
+      Math.ceil(viewport.width),
+      Math.ceil(viewport.height),
+    );
+
+    await page.render({ canvasContext: context, viewport, canvasFactory }).promise;
+
+    const outPath = path.join(absDir, `page-${String(i).padStart(4, '0')}.${ext}`);
+    await fs.writeFile(outPath, canvas.toBuffer(mimeType));
+    canvasFactory.destroy({ canvas });
+    files.push(outPath);
+  }
+
+  await pdf.destroy();
+  return { outputDir: absDir, numPages: total, format, scale, files };
 }

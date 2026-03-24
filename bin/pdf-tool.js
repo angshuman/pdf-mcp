@@ -8,12 +8,14 @@
  *   pdf-tool write <file> [--title "..."] [--author "..."] [--font-size N] [--in <textfile>]
  *   pdf-tool merge <output> <pdf1> <pdf2> [<pdf3>...]
  *   pdf-tool extract <input> <output> <page,page,...>
+ *   pdf-tool image <input> <output.png|jpg> [--page N] [--scale N]
+ *   pdf-tool images <input> <outputDir> [--scale N] [--format png|jpeg]
  *   pdf-tool split <input> <outputDir>
  */
 
 import { Command } from 'commander';
 import fs from 'fs/promises';
-import { readPDF, getPDFInfo, writePDF, mergePDFs, extractPages, splitPDF } from '../src/pdf-utils.js';
+import { readPDF, getPDFInfo, writePDF, mergePDFs, extractPages, splitPDF, pageToImage, pdfToImages } from '../src/pdf-utils.js';
 
 const program = new Command();
 
@@ -124,6 +126,40 @@ program
   .action(async (input, outputDir) => {
     const result = await splitPDF(input, outputDir);
     console.log(`Split ${result.numPages} pages → ${result.outputDir}`);
+    result.files.forEach(f => console.log(`  ${f}`));
+  });
+
+// ---------------------------------------------------------------------------
+// image — render one page to PNG/JPEG
+// ---------------------------------------------------------------------------
+program
+  .command('image <input> <output>')
+  .description('Render a single PDF page to a PNG or JPEG image')
+  .option('-p, --page <number>', 'Page number to render (1-based)', '1')
+  .option('-s, --scale <n>', 'Scale multiplier — 1=72dpi, 2=144dpi (default), 3=216dpi', '2')
+  .option('-f, --format <fmt>', 'Image format: png or jpeg (inferred from extension if omitted)')
+  .action(async (input, output, opts) => {
+    const result = await pageToImage(input, parseInt(opts.page, 10), output, {
+      scale: parseFloat(opts.scale),
+      format: opts.format,
+    });
+    console.log(`Rendered page ${result.page} → ${result.outputPath}  (${result.width}×${result.height}px)`);
+  });
+
+// ---------------------------------------------------------------------------
+// images — render all pages to a directory
+// ---------------------------------------------------------------------------
+program
+  .command('images <input> <outputDir>')
+  .description('Render all PDF pages to image files in a directory')
+  .option('-s, --scale <n>', 'Scale multiplier — 1=72dpi, 2=144dpi (default), 3=216dpi', '2')
+  .option('-f, --format <fmt>', 'Image format: png (default) or jpeg')
+  .action(async (input, outputDir, opts) => {
+    const result = await pdfToImages(input, outputDir, {
+      scale: parseFloat(opts.scale),
+      format: opts.format,
+    });
+    console.log(`Rendered ${result.numPages} page(s) → ${result.outputDir}  (${result.format}, ${result.scale}×)`);
     result.files.forEach(f => console.log(`  ${f}`));
   });
 
