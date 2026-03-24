@@ -12,12 +12,37 @@ No build step — plain JavaScript ESM, runs directly with Node.js 18+.
 
 ### Setup
 
+Clone the repo and link it globally so `pdf-mcp` is on your PATH:
+
+```bash
+git clone https://github.com/angshuman/pdf-mcp.git
+cd pdf-mcp
+npm install
+npm link          # registers the pdf-mcp command globally
+```
+
 **Claude Code:**
+```bash
+claude mcp add pdf-mcp -- pdf-mcp
+```
+
+**Claude Desktop** — add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+```json
+{
+  "mcpServers": {
+    "pdf-mcp": {
+      "command": "pdf-mcp"
+    }
+  }
+}
+```
+
+If you'd rather not use `npm link`, point directly at the script:
+
 ```bash
 claude mcp add pdf-mcp -- node /path/to/pdf-mcp/src/server.js
 ```
 
-**Claude Desktop** — add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 ```json
 {
   "mcpServers": {
